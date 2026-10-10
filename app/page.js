@@ -8,6 +8,8 @@ import Boton from "./boton";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const LIMITE_VISITAS = 10;
+
 function token() {
   return createHash("sha256")
     .update("pa:" + (process.env.APP_PASSWORD || ""))
@@ -46,7 +48,13 @@ async function salir() {
 
 async function analizar(formData) {
   "use server";
-  if (!(await esAdmin())) redirect("/");
+  const admin = await esAdmin();
+  if (!admin) {
+    const [{ n }] = await sql`select count(*)::int as n from applications
+      where created_at > now() - interval '24 hours'`;
+    if (n >= LIMITE_VISITAS) redirect("/?error=limite");
+  }
+
   const perfil = String(formData.get("perfil") || "");
   const oferta = String(formData.get("oferta") || "");
   if (oferta.length < 40) redirect("/?error=oferta");
@@ -103,12 +111,11 @@ async function borrar(formData) {
 
 const css = `
   .header { display: flex; align-items: center; gap: 14px; padding: 18px; margin-bottom: 20px; border-radius: 20px; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; box-shadow: 0 4px 14px rgba(79,70,229,0.3); }
-  .header img { width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0; }
+  .header img { width: 56px; height: 56px; border-radius: 23%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255,255,255,0.35); }
   .header h1 { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; line-height: 1.2; color: #fff; }
   .header p { margin: 2px 0 0; font-size: 0.88rem; opacity: 0.85; }
   .panel { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 28px; }
-  .panel-titulo { font-weight: 700; margin: 0 0 4px; color: var(--title); }
-  .panel-sub { margin: 0 0 12px; color: var(--muted); font-size: 0.9rem; }
+  .nota { margin: 4px 0 0; color: var(--muted); font-size: 0.8rem; text-align: center; }
   .lista-titulo { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; color: var(--title); }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -122,7 +129,10 @@ const css = `
   .carta { white-space: pre-wrap; font-family: inherit; background: var(--soft); border-radius: 12px; padding: 14px; margin: 8px 0 0; font-size: 0.93rem; }
   .acciones { margin-top: 12px; }
   .card form .borrar { width: auto; background: transparent; color: #ef4444; border: 1px solid #fca5a5; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
-  .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; margin-bottom: 20px; }
+  .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; }
+  .admin { margin-top: 32px; text-align: center; }
+  .admin summary { color: var(--muted); font-weight: 400; font-size: 0.85rem; }
+  .admin form { margin-top: 12px; text-align: left; }
   .aviso { background: #fef3c7; color: #92400e; border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; font-size: 0.95rem; }
   .vacio { text-align: center; color: var(--muted); padding: 24px 0; }
   @media (prefers-color-scheme: dark) {
@@ -155,31 +165,25 @@ export default async function Home({ searchParams }) {
         </div>
       </div>
 
-      {admin ? (
-        <>
-          <form action={salir}>
-            <button type="submit" className="salir">Cerrar sesión</button>
-          </form>
-          <form action={analizar} className="panel">
-            <textarea name="perfil" rows={4} placeholder="Tu perfil: experiencia, habilidades, estudios" />
-            <textarea name="oferta" rows={6} placeholder="Pegá acá el texto de la oferta" required />
-            <Boton texto="Analizar oferta" cargando="Analizando... (puede tardar unos segundos)" />
-          </form>
-        </>
-      ) : (
-        <form action={entrar} className="panel">
-          <p className="panel-titulo">Modo visitante</p>
-          <p className="panel-sub">Podés ver las postulaciones. Para analizar ofertas, ingresá la contraseña.</p>
-          <input type="password" name="clave" placeholder="Contraseña" required />
-          <button type="submit">Entrar</button>
-        </form>
-      )}
+      <form action={analizar} className="panel">
+        <textarea name="perfil" rows={4} placeholder="Tu perfil: experiencia, habilidades, estudios" />
+        <textarea name="oferta" rows={6} placeholder="Pegá acá el texto de la oferta" required />
+        <Boton texto="Analizar oferta" cargando="Analizando... (puede tardar unos segundos)" />
+        {!admin && (
+          <p className="nota">
+            Demo pública: los resultados quedan visibles para todos. No pongas datos sensibles.
+          </p>
+        )}
+      </form>
 
       {error === "clave" && <div className="aviso">Contraseña incorrecta.</div>}
       {error === "oferta" && <div className="aviso">Pegá el texto completo de la oferta.</div>}
       {error === "ia" && <div className="aviso">No se pudo analizar. Probá de nuevo.</div>}
+      {error === "limite" && (
+        <div className="aviso">Se alcanzó el límite de la demo por hoy. Probá de nuevo mañana.</div>
+      )}
 
-      <h2 className="lista-titulo">Mis postulaciones</h2>
+      <h2 className="lista-titulo">Postulaciones</h2>
       {rows.length === 0 && <p className="vacio">Todavía no analizaste ninguna.</p>}
 
       {rows.map((x) => (
@@ -208,6 +212,22 @@ export default async function Home({ searchParams }) {
           )}
         </div>
       ))}
+
+      <div className="admin">
+        {admin ? (
+          <form action={salir}>
+            <button type="submit" className="salir">Cerrar sesión</button>
+          </form>
+        ) : (
+          <details>
+            <summary>Soy el dueño</summary>
+            <form action={entrar}>
+              <input type="password" name="clave" placeholder="Contraseña" required />
+              <button type="submit">Entrar</button>
+            </form>
+          </details>
+        )}
+      </div>
     </main>
   );
 }
