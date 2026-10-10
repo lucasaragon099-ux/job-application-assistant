@@ -1,62 +1,48 @@
-# Asistente de postulaciones con IA
+# Job Application Assistant
 
-Aplicación web que analiza ofertas de trabajo: pegás el texto de una oferta y tu perfil, y la app devuelve el porcentaje de encaje, un resumen de lo que te falta y una carta de presentación a medida. Cada análisis se guarda en una base de datos.
+An AI-powered web app that analyzes a job posting against your profile, scores the fit, and writes a tailored cover letter. Every analysis is saved so you can track your applications.
 
-**Demo:** [(https://job-application-assistant-afsk6lt4i-lucas-c441.vercel.app)]
+**Live demo:** https://job-application-assistant-beryl.vercel.app
 
-## Qué hace
+## What it does
 
-- Analiza una oferta contra tu perfil con la API de Claude
-- Devuelve puesto, empresa, porcentaje de encaje, resumen y carta
-- Guarda el historial de postulaciones en PostgreSQL
-- Permite borrar postulaciones
-- Muestra el estado "Analizando..." y bloquea el botón mientras la IA responde
+- Paste your profile and a job posting, and get back the job title, company, a fit score (0-100%), a short summary of strengths and gaps, and a cover letter.
+- The cover letter is based only on the profile you provide, so it doesn't invent experience.
+- Every analysis is saved to a Postgres database and shown as a card with a color-coded score.
+- Visitors can try the demo without logging in (limited to 10 analyses per day). Only the owner can delete entries, using a password.
+- Shows an "Analyzing..." state and disables the button while the request is running.
+- Mobile-first layout with automatic dark mode.
 
-## Stack
+## Tech stack
 
 - **Next.js** (App Router, Server Actions)
-- **PostgreSQL** en Neon
-- **API de Anthropic (Claude)** para el análisis y la carta
-- **Vercel** para el deploy, conectado a este repositorio de GitHub
+- **PostgreSQL** on Neon
+- **Anthropic API (Claude)** for the analysis and the cover letter
+- **Vercel** for deployment, connected to this repository
 
-## Cómo lo construí
+## How I built it
 
-Lo armé íntegramente desde un iPhone, usando Claude como asistente de programación: código escrito con IA, y yo probando, leyendo errores y corrigiendo.
+I built this project entirely from my iPhone, with no computer. I wrote and edited the code in GitHub's web editor, and every commit deployed automatically on Vercel. I used Claude as a pair programmer: I described what I wanted, tested each version on my phone, and iterated.
 
-1. Primero prototipé la idea en una sola página para validar el flujo.
-2. Lo pasé a Next.js con una base de datos real en Neon.
-3. Lo publiqué en Vercel y le sumé el análisis con la API de Claude.
+1. First I prototyped the idea on a single page.
+2. Then I moved it to Next.js with a real database.
+3. Finally I published it on Vercel and added the AI analysis.
+4. After that I improved it: design, dark mode, logo, owner password and a daily demo limit.
 
-**Problemas que tuve que resolver:**
+**Problems I had to solve:**
 
-- Los primeros deploys fallaban. Leí los Build Logs y encontré que varios archivos (`package.json`, `layout.js`, `page.js`, `db.js`) se habían guardado vacíos al crearlos desde el celular. Los corregí uno por uno.
-- Al probar la app toqué el botón varias veces porque no mostraba que estaba trabajando, y se guardaron análisis duplicados. Lo arreglé agregando un estado de carga y un botón de borrar.
-- Las claves (base de datos y API) están como variables de entorno en Vercel, nunca en el repositorio.
+- The first deploys failed. I read the Build Logs in Vercel to find the errors and fix them.
+- While testing I tapped the button several times and created duplicates, so I added a pending state that disables the button while it analyzes.
+- The keys (database and API) are stored as environment variables, never in the code.
 
-## Variables de entorno
+## Environment variables
 
-| Variable | Para qué sirve |
-|---|---|
-| `DATABASE_URL` | Conexión a PostgreSQL (Neon) |
-| `ANTHROPIC_API_KEY` | Clave de la API de Claude |
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `DATABASE_URL` | Postgres connection string (Neon) |
+| `APP_PASSWORD` | Owner password (enables deleting entries) |
 
-## Tabla en la base de datos
+## Author
 
-```sql
-create table applications (
-  id serial primary key,
-  puesto text not null,
-  empresa text,
-  puntaje int,
-  estado text not null default 'Postulado',
-  resumen text,
-  carta text,
-  created_at timestamptz default now()
-);
-```
-
-## Ideas para seguir
-
-- Estados de seguimiento editables (postulado, entrevista, oferta)
-- Acceso protegido con clave
-- Mejor diseño visual
+Lucas Aragón
