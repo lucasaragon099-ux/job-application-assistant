@@ -2,7 +2,7 @@
 
 Aplicación web que analiza ofertas de trabajo: pegás el texto de una oferta y tu perfil, y la app devuelve el porcentaje de encaje, un resumen de lo que te falta y una carta de presentación a medida. Cada análisis se guarda en una base de datos.
 
-**Demo:** [PEGÁ ACÁ EL LINK DE VERCEL]
+**Demo:** [(https://job-application-assistant-afsk6lt4i-lucas-c441.vercel.app)]
 
 ## Qué hace
 
