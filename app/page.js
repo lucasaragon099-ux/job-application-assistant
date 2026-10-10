@@ -148,7 +148,7 @@ export default async function Home({ searchParams }) {
       <style dangerouslySetInnerHTML={{ __html: css }} />
 
       <div className="header">
-        <img src="/logo.png" alt="Logo" />
+        <img src="/IMG_0453.jpeg" alt="Logo" />
         <div>
           <h1>Asistente de postulaciones</h1>
           <p>Analizá una oferta y generá tu carta con IA</p>
