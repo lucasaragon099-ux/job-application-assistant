@@ -20,7 +20,7 @@ const css = `
   }
   textarea {
     width: 100%;
-    min-height: 120px;
+    min-height: 90px;
     padding: 14px;
     margin-bottom: 12px;
     background: #fff;
