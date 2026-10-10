@@ -59,14 +59,14 @@ async function analizar(formData) {
   const oferta = String(formData.get("oferta") || "");
   if (oferta.length < 40) redirect("/?error=oferta");
 
-  const prompt = `Sos un asistente de empleo. Respondé SOLO con JSON válido, en español rioplatense, con esta forma exacta:
-{"puesto":"string","empresa":"string","puntaje":0,"resumen":"2 frases sobre qué tan bien encaja y qué le falta","carta":"carta de presentación de 150 a 200 palabras, honesta, sin inventar experiencia, basada solo en el perfil"}
-"puntaje" es un número entero de 0 a 100.
+  const prompt = `You are a job application assistant. Reply ONLY with valid JSON, in English, with this exact shape:
+{"puesto":"string (job title)","empresa":"string (company name)","puntaje":0,"resumen":"2 sentences on how well the candidate fits and what is missing","carta":"cover letter of 150 to 200 words, honest, without inventing experience, based only on the profile"}
+"puntaje" is an integer from 0 to 100.
 
-PERFIL DEL CANDIDATO:
-${perfil || "(sin datos: puntuá bajo y sugerí completar el perfil)"}
+CANDIDATE PROFILE:
+${perfil || "(no data: score low and suggest completing the profile)"}
 
-OFERTA:
+JOB POSTING:
 ${oferta}`;
 
   let r = null;
@@ -95,7 +95,7 @@ ${oferta}`;
   if (!r) redirect("/?error=ia");
 
   await sql`insert into applications (puesto, empresa, puntaje, resumen, carta)
-    values (${r.puesto || "Puesto"}, ${r.empresa || ""}, ${Number(r.puntaje) || 0}, ${r.resumen || ""}, ${r.carta || ""})`;
+    values (${r.puesto || "Job title"}, ${r.empresa || ""}, ${Number(r.puntaje) || 0}, ${r.resumen || ""}, ${r.carta || ""})`;
   revalidatePath("/");
   redirect("/");
 }
@@ -160,31 +160,31 @@ export default async function Home({ searchParams }) {
       <div className="header">
         <img src="/IMG_0453.jpeg" alt="Logo" />
         <div>
-          <h1>Asistente de postulaciones</h1>
-          <p>Analizá una oferta y generá tu carta con IA</p>
+          <h1>Job Application Assistant</h1>
+          <p>Analyze a job posting and generate your cover letter with AI</p>
         </div>
       </div>
 
       <form action={analizar} className="panel">
-        <textarea name="perfil" rows={4} placeholder="Tu perfil: experiencia, habilidades, estudios" />
-        <textarea name="oferta" rows={6} placeholder="Pegá acá el texto de la oferta" required />
-        <Boton texto="Analizar oferta" cargando="Analizando... (puede tardar unos segundos)" />
+        <textarea name="perfil" rows={4} placeholder="Your profile: experience, skills, education" />
+        <textarea name="oferta" rows={6} placeholder="Paste the job posting text here" required />
+        <Boton texto="Analyze posting" cargando="Analyzing... (this may take a few seconds)" />
         {!admin && (
           <p className="nota">
-            Demo pública: los resultados quedan visibles para todos. No pongas datos sensibles.
+            Public demo: results are visible to everyone. Please don't enter sensitive data.
           </p>
         )}
       </form>
 
-      {error === "clave" && <div className="aviso">Contraseña incorrecta.</div>}
-      {error === "oferta" && <div className="aviso">Pegá el texto completo de la oferta.</div>}
-      {error === "ia" && <div className="aviso">No se pudo analizar. Probá de nuevo.</div>}
+      {error === "clave" && <div className="aviso">Incorrect password.</div>}
+      {error === "oferta" && <div className="aviso">Please paste the full job posting text.</div>}
+      {error === "ia" && <div className="aviso">The analysis failed. Please try again.</div>}
       {error === "limite" && (
-        <div className="aviso">Se alcanzó el límite de la demo por hoy. Probá de nuevo mañana.</div>
+        <div className="aviso">The demo limit has been reached for today. Please try again tomorrow.</div>
       )}
 
-      <h2 className="lista-titulo">Postulaciones</h2>
-      {rows.length === 0 && <p className="vacio">Todavía no analizaste ninguna.</p>}
+      <h2 className="lista-titulo">Applications</h2>
+      {rows.length === 0 && <p className="vacio">No postings analyzed yet.</p>}
 
       {rows.map((x) => (
         <div key={x.id} className="card">
@@ -200,14 +200,14 @@ export default async function Home({ searchParams }) {
           {x.resumen && <p className="resumen">{x.resumen}</p>}
           {x.carta && (
             <details>
-              <summary>Ver carta</summary>
+              <summary>View cover letter</summary>
               <pre className="carta">{x.carta}</pre>
             </details>
           )}
           {admin && (
             <form action={borrar} className="acciones">
               <input type="hidden" name="id" value={x.id} />
-              <button type="submit" className="borrar">Borrar</button>
+              <button type="submit" className="borrar">Delete</button>
             </form>
           )}
         </div>
@@ -216,14 +216,14 @@ export default async function Home({ searchParams }) {
       <div className="admin">
         {admin ? (
           <form action={salir}>
-            <button type="submit" className="salir">Cerrar sesión</button>
+            <button type="submit" className="salir">Sign out</button>
           </form>
         ) : (
           <details>
-            <summary>Soy el dueño</summary>
+            <summary>I'm the owner</summary>
             <form action={entrar}>
-              <input type="password" name="clave" placeholder="Contraseña" required />
-              <button type="submit">Entrar</button>
+              <input type="password" name="clave" placeholder="Password" required />
+              <button type="submit">Sign in</button>
             </form>
           </details>
         )}
