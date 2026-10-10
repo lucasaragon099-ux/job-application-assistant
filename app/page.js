@@ -1,6 +1,7 @@
 import { sql } from "../lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import Boton from "./boton";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -52,6 +53,14 @@ ${oferta}`;
   redirect("/");
 }
 
+async function borrar(formData) {
+  "use server";
+  const id = Number(formData.get("id"));
+  if (!id) return;
+  await sql`delete from applications where id = ${id}`;
+  revalidatePath("/");
+}
+
 export default async function Home({ searchParams }) {
   const { error } = await searchParams;
   const rows = await sql`select * from applications order by created_at desc`;
@@ -61,7 +70,7 @@ export default async function Home({ searchParams }) {
       <form action={analizar} style={{ display: "grid", gap: 8, marginBottom: 24 }}>
         <textarea name="perfil" rows={4} placeholder="Tu perfil: experiencia, habilidades, estudios" />
         <textarea name="oferta" rows={6} placeholder="Pegá acá el texto de la oferta" required />
-        <button type="submit">Analizar oferta</button>
+        <Boton texto="Analizar oferta" cargando="Analizando... (puede tardar unos segundos)" />
       </form>
       {error === "oferta" && <p>Pegá el texto completo de la oferta.</p>}
       {error === "ia" && <p>No se pudo analizar. Probá de nuevo.</p>}
@@ -76,9 +85,12 @@ export default async function Home({ searchParams }) {
               <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{x.carta}</pre>
             </details>
           )}
+          <form action={borrar} style={{ marginTop: 8 }}>
+            <input type="hidden" name="id" value={x.id} />
+            <button type="submit">Borrar</button>
+          </form>
         </div>
       ))}
     </main>
   );
 }
-
