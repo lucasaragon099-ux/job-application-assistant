@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createHash } from "crypto";
 import Boton from "./boton";
+import Copiar from "./copiar";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -127,6 +128,7 @@ const css = `
   .bajo { background: #fee2e2; color: #991b1b; }
   .resumen { margin: 12px 0; font-size: 0.95rem; }
   .carta { white-space: pre-wrap; font-family: inherit; background: var(--soft); border-radius: 12px; padding: 14px; margin: 8px 0 0; font-size: 0.93rem; }
+  .copiar
   .acciones { margin-top: 12px; }
   .card form .borrar { width: auto; background: transparent; color: #ef4444; border: 1px solid #fca5a5; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
   .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; }
@@ -202,6 +204,7 @@ export default async function Home({ searchParams }) {
             <details>
               <summary>View cover letter</summary>
               <pre className="carta">{x.carta}</pre>
+            <Copiar texto={x.carta} />
             </details>
           )}
           {admin && (
