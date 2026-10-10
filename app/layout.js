@@ -1,4 +1,4 @@
-export const metadata = { title: "Asistente de postulaciones" };
+export const metadata = { title: "Job Application Assistant" };
 
 const css = `
   * { box-sizing: border-box; }
