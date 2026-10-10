@@ -1,13 +1,52 @@
 import { sql } from "../lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { createHash } from "crypto";
 import Boton from "./boton";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+function token() {
+  return createHash("sha256")
+    .update("pa:" + (process.env.APP_PASSWORD || ""))
+    .digest("hex");
+}
+
+async function esAdmin() {
+  if (!process.env.APP_PASSWORD) return false;
+  const c = await cookies();
+  return c.get("auth")?.value === token();
+}
+
+async function entrar(formData) {
+  "use server";
+  const clave = String(formData.get("clave") || "");
+  if (process.env.APP_PASSWORD && clave === process.env.APP_PASSWORD) {
+    const c = await cookies();
+    c.set("auth", token(), {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30,
+      path: "/",
+    });
+    redirect("/");
+  }
+  redirect("/?error=clave");
+}
+
+async function salir() {
+  "use server";
+  const c = await cookies();
+  c.delete("auth");
+  redirect("/");
+}
+
 async function analizar(formData) {
   "use server";
+  if (!(await esAdmin())) redirect("/");
   const perfil = String(formData.get("perfil") || "");
   const oferta = String(formData.get("oferta") || "");
   if (oferta.length < 40) redirect("/?error=oferta");
@@ -55,6 +94,7 @@ ${oferta}`;
 
 async function borrar(formData) {
   "use server";
+  if (!(await esAdmin())) return;
   const id = Number(formData.get("id"));
   if (!id) return;
   await sql`delete from applications where id = ${id}`;
@@ -62,24 +102,35 @@ async function borrar(formData) {
 }
 
 const css = `
-  .sub { color: #6b7280; margin: -12px 0 22px; font-size: 0.95rem; }
-  .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 28px; }
-  .panel textarea { margin-bottom: 10px; background: #f9fafb; box-shadow: none; }
-  .lista-titulo { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; color: #374151; }
-  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .header { display: flex; align-items: center; gap: 14px; padding: 18px; margin-bottom: 20px; border-radius: 20px; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; box-shadow: 0 4px 14px rgba(79,70,229,0.3); }
+  .header img { width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0; }
+  .header h1 { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; line-height: 1.2; color: #fff; }
+  .header p { margin: 2px 0 0; font-size: 0.88rem; opacity: 0.85; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 28px; }
+  .panel-titulo { font-weight: 700; margin: 0 0 4px; color: var(--title); }
+  .panel-sub { margin: 0 0 12px; color: var(--muted); font-size: 0.9rem; }
+  .lista-titulo { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; color: var(--title); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .puesto { font-weight: 700; font-size: 1.05rem; line-height: 1.3; color: #111827; }
-  .empresa { color: #6b7280; font-size: 0.9rem; margin-top: 2px; }
+  .puesto { font-weight: 700; font-size: 1.05rem; line-height: 1.3; color: var(--title); }
+  .empresa { color: var(--muted); font-size: 0.9rem; margin-top: 2px; }
   .badge { flex-shrink: 0; font-weight: 700; font-size: 0.9rem; padding: 6px 12px; border-radius: 999px; }
   .alto { background: #dcfce7; color: #166534; }
   .medio { background: #fef3c7; color: #92400e; }
   .bajo { background: #fee2e2; color: #991b1b; }
-  .resumen { margin: 12px 0; color: #374151; font-size: 0.95rem; }
-  .carta { white-space: pre-wrap; font-family: inherit; background: #f5f6fa; border-radius: 12px; padding: 14px; margin: 8px 0 0; font-size: 0.93rem; }
-  .card form .borrar { width: auto; background: transparent; color: #dc2626; border: 1px solid #fecaca; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
+  .resumen { margin: 12px 0; font-size: 0.95rem; }
+  .carta { white-space: pre-wrap; font-family: inherit; background: var(--soft); border-radius: 12px; padding: 14px; margin: 8px 0 0; font-size: 0.93rem; }
   .acciones { margin-top: 12px; }
+  .card form .borrar { width: auto; background: transparent; color: #ef4444; border: 1px solid #fca5a5; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
+  .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; margin-bottom: 20px; }
   .aviso { background: #fef3c7; color: #92400e; border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; font-size: 0.95rem; }
-  .vacio { text-align: center; color: #9ca3af; padding: 24px 0; }
+  .vacio { text-align: center; color: var(--muted); padding: 24px 0; }
+  @media (prefers-color-scheme: dark) {
+    .alto { background: #14532d; color: #bbf7d0; }
+    .medio { background: #713f12; color: #fde68a; }
+    .bajo { background: #7f1d1d; color: #fecaca; }
+    .aviso { background: #422006; color: #fde68a; }
+  }
 `;
 
 function claseBadge(p) {
@@ -90,19 +141,41 @@ function claseBadge(p) {
 
 export default async function Home({ searchParams }) {
   const { error } = await searchParams;
+  const admin = await esAdmin();
   const rows = await sql`select * from applications order by created_at desc`;
   return (
     <main>
       <style dangerouslySetInnerHTML={{ __html: css }} />
-      <h1>Asistente de postulaciones</h1>
-      <p className="sub">Analizá una oferta y generá tu carta con IA</p>
 
-      <form action={analizar} className="panel">
-        <textarea name="perfil" rows={4} placeholder="Tu perfil: experiencia, habilidades, estudios" />
-        <textarea name="oferta" rows={6} placeholder="Pegá acá el texto de la oferta" required />
-        <Boton texto="Analizar oferta" cargando="Analizando... (puede tardar unos segundos)" />
-      </form>
+      <div className="header">
+        <img src="/logo.png" alt="Logo" />
+        <div>
+          <h1>Asistente de postulaciones</h1>
+          <p>Analizá una oferta y generá tu carta con IA</p>
+        </div>
+      </div>
 
+      {admin ? (
+        <>
+          <form action={salir}>
+            <button type="submit" className="salir">Cerrar sesión</button>
+          </form>
+          <form action={analizar} className="panel">
+            <textarea name="perfil" rows={4} placeholder="Tu perfil: experiencia, habilidades, estudios" />
+            <textarea name="oferta" rows={6} placeholder="Pegá acá el texto de la oferta" required />
+            <Boton texto="Analizar oferta" cargando="Analizando... (puede tardar unos segundos)" />
+          </form>
+        </>
+      ) : (
+        <form action={entrar} className="panel">
+          <p className="panel-titulo">Modo visitante</p>
+          <p className="panel-sub">Podés ver las postulaciones. Para analizar ofertas, ingresá la contraseña.</p>
+          <input type="password" name="clave" placeholder="Contraseña" required />
+          <button type="submit">Entrar</button>
+        </form>
+      )}
+
+      {error === "clave" && <div className="aviso">Contraseña incorrecta.</div>}
       {error === "oferta" && <div className="aviso">Pegá el texto completo de la oferta.</div>}
       {error === "ia" && <div className="aviso">No se pudo analizar. Probá de nuevo.</div>}
 
@@ -127,10 +200,12 @@ export default async function Home({ searchParams }) {
               <pre className="carta">{x.carta}</pre>
             </details>
           )}
-          <form action={borrar} className="acciones">
-            <input type="hidden" name="id" value={x.id} />
-            <button type="submit" className="borrar">Borrar</button>
-          </form>
+          {admin && (
+            <form action={borrar} className="acciones">
+              <input type="hidden" name="id" value={x.id} />
+              <button type="submit" className="borrar">Borrar</button>
+            </form>
+          )}
         </div>
       ))}
     </main>
