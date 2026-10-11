@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const LIMITE_VISITAS = 10;
+const LIMITE_COMPARACIONES = 5;
 
 function token() {
   return createHash("sha256")
@@ -129,6 +130,78 @@ ${oferta}`;
   redirect("/");
 }
 
+async function comparar(formData) {
+  "use server";
+  const admin = await esAdmin();
+  if (!admin) {
+    const [{ n }] = await sql`select count(*)::int as n from comparaciones
+      where created_at > now() - interval '24 hours'`;
+    if (n >= LIMITE_COMPARACIONES) redirect("/?error=limitecomp");
+  }
+
+  const ids = [...new Set(formData.getAll("ids").map(Number).filter(Boolean))];
+  if (ids.length < 2 || ids.length > 3) redirect("/?error=comparar");
+
+  const todas = await sql`select id, puesto, empresa, puntaje, resumen, detalle, alertas from applications`;
+  const elegidas = todas.filter((x) => ids.includes(Number(x.id)));
+  if (elegidas.length < 2) redirect("/?error=comparar");
+
+  const datos = elegidas.map((x) => ({
+    id: Number(x.id),
+    job_title: x.puesto,
+    company: x.empresa,
+    fit_score: x.puntaje,
+    summary: x.resumen,
+    requirements: (Array.isArray(x.detalle) ? x.detalle : []).map((q) => ({
+      requirement: q.requisito,
+      required: q.obligatorio,
+      status: q.estado,
+    })),
+    warning_signs: (Array.isArray(x.alertas) ? x.alertas : []).map((a) => a.titulo),
+  }));
+
+  const prompt = `You compare job postings for one candidate. Use ONLY the data below and never invent facts. Reply ONLY with valid JSON, in English, with this exact shape:
+{"ranking":[{"id":0,"puesto":"string","empresa":"string","razon":"one sentence"}],"veredicto":"2-3 sentences: which posting to prioritize and why","en_comun":["requirements or skills that appear in two or more postings"],"sinergias":"2-3 sentences on how these postings reinforce each other (shared skills, same career path)","brechas":[{"habilidad":"string","cantidad":0}],"plan":["3 to 5 concrete steps to learn, ordered by how many postings they unlock"]}
+
+Rules:
+- "ranking" is sorted from best fit to worst fit and includes every posting.
+- "brechas" lists requirements with status "missing" or "partial" that appear in more than one posting; "cantidad" is the number of postings that ask for it.
+- If a posting has no requirement data, say so in its "razon" and rely on its summary and fit score.
+- Keep every string short.
+
+POSTINGS:
+${JSON.stringify(datos)}`;
+
+  let r = null;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5-5",
+        max_tokens: 2500,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const text = (data.content || []).map((c) => c.text || "").join("");
+      r = JSON.parse(text.replace(/```json|```/g, "").trim());
+    }
+  } catch (e) {
+    r = null;
+  }
+  if (!r) redirect("/?error=ia");
+
+  const filas = await sql`insert into comparaciones (ids, resultado)
+    values (${ids.join(",")}, ${JSON.stringify(r)}::jsonb) returning id`;
+  redirect("/?c=" + filas[0].id + "#comparison");
+}
+
 async function borrar(formData) {
   "use server";
   if (!(await esAdmin())) return;
@@ -179,6 +252,15 @@ const css = `
   .al.high .al-grav { color: #ef4444; }
   .al.medium .al-grav { color: #d97706; }
   .al.low .al-grav { color: var(--muted); }
+  .chk { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 0.85rem; color: var(--muted); }
+  .chk input { width: 18px; height: 18px; margin: 0; }
+  .barra { margin-bottom: 14px; }
+  .barra .nota { margin-top: 6px; }
+  .comp { border: 2px solid var(--primary); }
+  .cerrar { color: var(--muted); font-size: 0.85rem; text-decoration: none; border: 1px solid var(--border); border-radius: 10px; padding: 6px 12px; }
+  .sub { font-size: 0.9rem; font-weight: 700; margin: 14px 0 6px; color: var(--title); }
+  .rank { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 0.93rem; }
+  .lista { margin: 0; padding-left: 20px; font-size: 0.9rem; display: grid; gap: 4px; }
   .card form .borrar { width: auto; background: transparent; color: #ef4444; border: 1px solid #fca5a5; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
   .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; }
   .admin { margin-top: 32px; text-align: center; }
@@ -203,9 +285,20 @@ function claseBadge(p) {
 const ETIQUETA = { met: "Met", partial: "Partial", missing: "Missing" };
 
 export default async function Home({ searchParams }) {
-  const { error } = await searchParams;
+  const { error, c } = await searchParams;
   const admin = await esAdmin();
   const rows = await sql`select * from applications order by created_at desc`;
+
+  let comp = null;
+  if (c) {
+    try {
+      const rr = await sql`select resultado from comparaciones where id = ${Number(c) || 0}`;
+      comp = rr[0]?.resultado || null;
+    } catch (e) {
+      comp = null;
+    }
+  }
+
   return (
     <main>
       <style dangerouslySetInnerHTML={{ __html: css }} />
@@ -235,9 +328,90 @@ export default async function Home({ searchParams }) {
       {error === "limite" && (
         <div className="aviso">The demo limit has been reached for today. Please try again tomorrow.</div>
       )}
+      {error === "comparar" && (
+        <div className="aviso">Select 2 or 3 postings to compare.</div>
+      )}
+      {error === "limitecomp" && (
+        <div className="aviso">The comparison limit has been reached for today. Please try again tomorrow.</div>
+      )}
+
+      {comp && (
+        <div className="card comp" id="comparison">
+          <div className="card-top">
+            <div className="puesto">Comparison</div>
+            <a className="cerrar" href="/">Close</a>
+          </div>
+          {comp.veredicto && <p className="resumen">{comp.veredicto}</p>}
+
+          {Array.isArray(comp.ranking) && comp.ranking.length > 0 && (
+            <>
+              <h3 className="sub">Ranking (best fit first)</h3>
+              <ol className="rank">
+                {comp.ranking.map((r, i) => (
+                  <li key={i}>
+                    <b>{r.puesto}</b>
+                    {r.empresa ? " · " + r.empresa : ""}
+                    <div className="req-evidencia">{r.razon}</div>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+
+          {Array.isArray(comp.en_comun) && comp.en_comun.length > 0 && (
+            <>
+              <h3 className="sub">In common</h3>
+              <ul className="lista">
+                {comp.en_comun.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {comp.sinergias && (
+            <>
+              <h3 className="sub">Synergy</h3>
+              <p className="resumen" style={{ margin: 0 }}>{comp.sinergias}</p>
+            </>
+          )}
+
+          {Array.isArray(comp.brechas) && comp.brechas.length > 0 && (
+            <>
+              <h3 className="sub">Shared gaps</h3>
+              <ul className="lista">
+                {comp.brechas.map((b, i) => (
+                  <li key={i}>
+                    {b.habilidad} · asked in {b.cantidad} postings
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {Array.isArray(comp.plan) && comp.plan.length > 0 && (
+            <>
+              <h3 className="sub">What to learn first</h3>
+              <ol className="rank">
+                {comp.plan.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ol>
+            </>
+          )}
+          <p className="nota">Based only on the saved analyses of the selected postings.</p>
+        </div>
+      )}
 
       <h2 className="lista-titulo">Applications</h2>
       {rows.length === 0 && <p className="vacio">No postings analyzed yet.</p>}
+
+      {rows.length >= 2 && (
+        <form id="comparar-form" action={comparar} className="barra">
+          <Boton texto="Compare selected (2-3)" cargando="Comparing..." />
+          <p className="nota">Tick the postings you want to compare.</p>
+        </form>
+      )}
 
       {rows.map((x) => (
         <div key={x.id} className="card">
@@ -305,6 +479,14 @@ export default async function Home({ searchParams }) {
               <Copiar texto={x.carta} />
             </details>
           )}
+
+          {rows.length >= 2 && (
+            <label className="chk">
+              <input type="checkbox" name="ids" value={x.id} form="comparar-form" />
+              Select to compare
+            </label>
+          )}
+
           {admin && (
             <form action={borrar} className="acciones">
               <input type="hidden" name="id" value={x.id} />
