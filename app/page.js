@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { createHash } from "crypto";
 import Boton from "./boton";
 import Copiar from "./copiar";
+import Perfil from "./perfil";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -168,7 +169,7 @@ export default async function Home({ searchParams }) {
       </div>
 
       <form action={analizar} className="panel">
-        <textarea name="perfil" rows={4} placeholder="Your profile: experience, skills, education" />
+        <Perfil />
         <textarea name="oferta" rows={6} placeholder="Paste the job posting text here" required />
         <Boton texto="Analyze posting" cargando="Analyzing... (this may take a few seconds)" />
         {!admin && (
