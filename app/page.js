@@ -236,7 +236,7 @@ Rules:
 - "cantidad" is the number of postings that ask for that skill. It can never be greater than ${total}.
 - "estado" is the candidate's status for that skill across the postings: "met" if it was met in most of them, "partial" if mixed or partial, "missing" if it was mostly missing.
 - Return at most 10 skills, sorted by "cantidad" from highest to lowest.
-- "prioridad": the 3 skills the candidate should learn or prove first, chosen among skills that are "missing" or "partial" and asked by the most postings. If there are none, return an empty list.
+- "prioridad": the 3 skills the candidate should learn or prove first, chosen among skills that are "missing" or "partial" and asked by the most postings. Prefer concrete skills that can be studied or demonstrated (tools, software, languages, certifications) over soft skills such as communication or problem solving. If there are none, return an empty list.
 - Keep every string short.
 
 POSTINGS (${total}):
