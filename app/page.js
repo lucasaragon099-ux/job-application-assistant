@@ -62,11 +62,17 @@ async function analizar(formData) {
   if (oferta.length < 40) redirect("/?error=oferta");
 
   const prompt = `You are a job application assistant. Reply ONLY with valid JSON, in English, with this exact shape:
-{"puesto":"string (job title)","empresa":"string (company name)","puntaje":0,"resumen":"2 sentences on how well the candidate fits and what is missing","carta":"cover letter of 150 to 200 words, honest, without inventing experience, based only on the profile"}
-"puntaje" is an integer from 0 to 100.
+{"puesto":"string (job title)","empresa":"string (company name)","puntaje":0,"resumen":"2 sentences on how well the candidate fits and what is missing","requisitos":[{"requisito":"string","obligatorio":true,"estado":"met","evidencia":"string"}],"carta":"cover letter of 150 to 200 words, honest, without inventing experience, based only on the profile"}
+
+Rules:
+- "requisitos": the 5 to 10 most important requirements of the job posting (skills, tools, experience, education, languages).
+- "obligatorio": true if the posting presents it as required, false if it is nice to have.
+- "estado": "met" only if the profile clearly shows it, "partial" if there is related but incomplete evidence, "missing" if the profile has no evidence.
+- "evidencia": a short phrase from the profile that supports the status, or "Not found in profile" when missing. Never invent evidence.
+- "puntaje": an integer from 0 to 100.
 
 CANDIDATE PROFILE:
-${perfil || "(no data: score low and suggest completing the profile)"}
+${perfil || "(no data: mark everything as missing and suggest completing the profile)"}
 
 JOB POSTING:
 ${oferta}`;
@@ -82,7 +88,7 @@ ${oferta}`;
       },
       body: JSON.stringify({
         model: "claude-sonnet-5-5",
-        max_tokens: 1500,
+        max_tokens: 2500,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -96,8 +102,22 @@ ${oferta}`;
   }
   if (!r) redirect("/?error=ia");
 
-  await sql`insert into applications (puesto, empresa, puntaje, resumen, carta)
-    values (${r.puesto || "Job title"}, ${r.empresa || ""}, ${Number(r.puntaje) || 0}, ${r.resumen || ""}, ${r.carta || ""})`;
+  const reqs = Array.isArray(r.requisitos) ? r.requisitos.slice(0, 10) : [];
+  let puntaje = Number(r.puntaje) || 0;
+  if (reqs.length > 0) {
+    let total = 0;
+    let logrado = 0;
+    for (const q of reqs) {
+      const peso = q.obligatorio ? 2 : 1;
+      total += peso;
+      if (q.estado === "met") logrado += peso;
+      else if (q.estado === "partial") logrado += peso * 0.5;
+    }
+    puntaje = Math.round((logrado / total) * 100);
+  }
+
+  await sql`insert into applications (puesto, empresa, puntaje, resumen, carta, detalle)
+    values (${r.puesto || "Job title"}, ${r.empresa || ""}, ${puntaje}, ${r.resumen || ""}, ${r.carta || ""}, ${JSON.stringify(reqs)}::jsonb)`;
   revalidatePath("/");
   redirect("/");
 }
@@ -129,8 +149,19 @@ const css = `
   .bajo { background: #fee2e2; color: #991b1b; }
   .resumen { margin: 12px 0; font-size: 0.95rem; }
   .carta { white-space: pre-wrap; font-family: inherit; background: var(--soft); border-radius: 12px; padding: 14px; margin: 8px 0 0; font-size: 0.93rem; }
-  .copiar
   .acciones { margin-top: 12px; }
+  .copiar { width: auto; margin-top: 10px; background: transparent; color: var(--primary); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; border-radius: 10px; }
+  .reqs { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+  .req { background: var(--soft); border-radius: 12px; padding: 10px 12px; border-left: 4px solid var(--border); }
+  .req.met { border-left-color: #22c55e; }
+  .req.partial { border-left-color: #f59e0b; }
+  .req.missing { border-left-color: #ef4444; }
+  .req-top { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; font-size: 0.92rem; }
+  .req-estado { flex-shrink: 0; font-size: 0.78rem; }
+  .req.met .req-estado { color: #16a34a; }
+  .req.partial .req-estado { color: #d97706; }
+  .req.missing .req-estado { color: #ef4444; }
+  .req-evidencia { color: var(--muted); font-size: 0.85rem; margin-top: 3px; }
   .card form .borrar { width: auto; background: transparent; color: #ef4444; border: 1px solid #fca5a5; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
   .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; }
   .admin { margin-top: 32px; text-align: center; }
@@ -151,6 +182,8 @@ function claseBadge(p) {
   if (p >= 40) return "badge medio";
   return "badge bajo";
 }
+
+const ETIQUETA = { met: "Met", partial: "Partial", missing: "Missing" };
 
 export default async function Home({ searchParams }) {
   const { error } = await searchParams;
@@ -201,11 +234,35 @@ export default async function Home({ searchParams }) {
             )}
           </div>
           {x.resumen && <p className="resumen">{x.resumen}</p>}
+
+          {Array.isArray(x.detalle) && x.detalle.length > 0 && (
+            <details>
+              <summary>Requirements breakdown</summary>
+              <ul className="reqs">
+                {x.detalle.map((q, i) => (
+                  <li key={i} className={"req " + q.estado}>
+                    <div className="req-top">
+                      <span>
+                        {q.requisito}
+                        {q.obligatorio ? " *" : ""}
+                      </span>
+                      <span className="req-estado">{ETIQUETA[q.estado] || q.estado}</span>
+                    </div>
+                    <div className="req-evidencia">{q.evidencia}</div>
+                  </li>
+                ))}
+              </ul>
+              <p className="nota">
+                * Required. Score = share of requirements met (partial counts half, required count double).
+              </p>
+            </details>
+          )}
+
           {x.carta && (
             <details>
               <summary>View cover letter</summary>
               <pre className="carta">{x.carta}</pre>
-            <Copiar texto={x.carta} />
+              <Copiar texto={x.carta} />
             </details>
           )}
           {admin && (
