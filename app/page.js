@@ -62,14 +62,20 @@ async function analizar(formData) {
   if (oferta.length < 40) redirect("/?error=oferta");
 
   const prompt = `You are a job application assistant. Reply ONLY with valid JSON, in English, with this exact shape:
-{"puesto":"string (job title)","empresa":"string (company name)","puntaje":0,"resumen":"2 sentences on how well the candidate fits and what is missing","requisitos":[{"requisito":"string","obligatorio":true,"estado":"met","evidencia":"string"}],"carta":"cover letter of 150 to 200 words, honest, without inventing experience, based only on the profile"}
+{"puesto":"string (job title)","empresa":"string (company name)","puntaje":0,"resumen":"2 sentences on how well the candidate fits and what is missing","requisitos":[{"requisito":"string","obligatorio":true,"estado":"met","evidencia":"string"}],"alertas":[{"titulo":"string","detalle":"string","gravedad":"high"}],"carta":"cover letter of 150 to 200 words, honest, without inventing experience, based only on the profile"}
 
-Rules:
-- "requisitos": the 5 to 10 most important requirements of the job posting (skills, tools, experience, education, languages).
+Rules for "requisitos":
+- The 5 to 10 most important requirements of the job posting (skills, tools, experience, education, languages).
 - "obligatorio": true if the posting presents it as required, false if it is nice to have.
 - "estado": "met" only if the profile clearly shows it, "partial" if there is related but incomplete evidence, "missing" if the profile has no evidence.
 - "evidencia": a short phrase from the profile that supports the status, or "Not found in profile" when missing. Never invent evidence.
-- "puntaje": an integer from 0 to 100.
+
+Rules for "alertas":
+- Flag only real warning signs that are present in the job posting text, for example: asking the candidate to pay money or buy something, vague or hidden company identity, unrealistic pay or promises, unpaid trial work, asking for sensitive documents or bank data early, contact only through personal messaging or free email accounts, contradictory requirements (such as a junior role asking for many years of experience), or a very vague job description.
+- Each alert needs a short "titulo", a one-sentence "detalle" that points to what the posting says, and "gravedad" equal to "high", "medium" or "low".
+- If the posting shows no warning signs, return an empty list []. Never invent alerts and never judge the company beyond what the text says.
+
+"puntaje": an integer from 0 to 100.
 
 CANDIDATE PROFILE:
 ${perfil || "(no data: mark everything as missing and suggest completing the profile)"}
@@ -88,7 +94,7 @@ ${oferta}`;
       },
       body: JSON.stringify({
         model: "claude-sonnet-5-5",
-        max_tokens: 2500,
+        max_tokens: 3000,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -103,6 +109,7 @@ ${oferta}`;
   if (!r) redirect("/?error=ia");
 
   const reqs = Array.isArray(r.requisitos) ? r.requisitos.slice(0, 10) : [];
+  const alertas = Array.isArray(r.alertas) ? r.alertas.slice(0, 6) : [];
   let puntaje = Number(r.puntaje) || 0;
   if (reqs.length > 0) {
     let total = 0;
@@ -116,8 +123,8 @@ ${oferta}`;
     puntaje = Math.round((logrado / total) * 100);
   }
 
-  await sql`insert into applications (puesto, empresa, puntaje, resumen, carta, detalle)
-    values (${r.puesto || "Job title"}, ${r.empresa || ""}, ${puntaje}, ${r.resumen || ""}, ${r.carta || ""}, ${JSON.stringify(reqs)}::jsonb)`;
+  await sql`insert into applications (puesto, empresa, puntaje, resumen, carta, detalle, alertas)
+    values (${r.puesto || "Job title"}, ${r.empresa || ""}, ${puntaje}, ${r.resumen || ""}, ${r.carta || ""}, ${JSON.stringify(reqs)}::jsonb, ${JSON.stringify(alertas)}::jsonb)`;
   revalidatePath("/");
   redirect("/");
 }
@@ -162,6 +169,16 @@ const css = `
   .req.partial .req-estado { color: #d97706; }
   .req.missing .req-estado { color: #ef4444; }
   .req-evidencia { color: var(--muted); font-size: 0.85rem; margin-top: 3px; }
+  .sin-alertas { margin: 10px 0 0; color: #16a34a; font-size: 0.85rem; }
+  .al { background: var(--soft); border-radius: 12px; padding: 10px 12px; border-left: 4px solid var(--border); }
+  .al.high { border-left-color: #ef4444; }
+  .al.medium { border-left-color: #f59e0b; }
+  .al.low { border-left-color: #9ca3af; }
+  .al-top { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; font-size: 0.92rem; }
+  .al-grav { flex-shrink: 0; font-size: 0.78rem; text-transform: capitalize; }
+  .al.high .al-grav { color: #ef4444; }
+  .al.medium .al-grav { color: #d97706; }
+  .al.low .al-grav { color: var(--muted); }
   .card form .borrar { width: auto; background: transparent; color: #ef4444; border: 1px solid #fca5a5; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
   .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; }
   .admin { margin-top: 32px; text-align: center; }
@@ -256,6 +273,29 @@ export default async function Home({ searchParams }) {
                 * Required. Score = share of requirements met (partial counts half, required count double).
               </p>
             </details>
+          )}
+
+          {Array.isArray(x.alertas) && x.alertas.length > 0 && (
+            <details>
+              <summary>Posting alerts ({x.alertas.length})</summary>
+              <ul className="reqs">
+                {x.alertas.map((a, i) => (
+                  <li key={i} className={"al " + a.gravedad}>
+                    <div className="al-top">
+                      <span>{a.titulo}</span>
+                      <span className="al-grav">{a.gravedad}</span>
+                    </div>
+                    <div className="req-evidencia">{a.detalle}</div>
+                  </li>
+                ))}
+              </ul>
+              <p className="nota">
+                Based only on the text of the posting. This does not verify the company.
+              </p>
+            </details>
+          )}
+          {Array.isArray(x.alertas) && x.alertas.length === 0 && (
+            <p className="sin-alertas">✓ No warning signs found in the posting text</p>
           )}
 
           {x.carta && (
