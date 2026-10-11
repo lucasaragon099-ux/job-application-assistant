@@ -9,6 +9,7 @@ An AI-powered web app that analyzes a job posting against your profile, shows **
 - **Requirements breakdown:** every requirement of the posting is marked as met, partial or missing, with the evidence taken from your profile. The fit score is calculated by the code from these results (required items count double, partial counts half), not guessed by the AI.
 - **Posting alerts:** detects warning signs in the text of the posting, such as asking the candidate to pay money, early requests for ID or bank details, contradictory requirements or unrealistic pay. Postings with serious alerts get a red "High risk" badge. It only judges the text, it does not verify the company.
 - **Comparison:** select 2 or 3 saved postings and get a ranking, the requirements they share, the synergy between them, shared skill gaps and what to learn first.
+- - **Skills dashboard:** groups the requirements of all saved postings by skill, shows how many postings ask for each one and your status (met, partial, missing), and suggests what to learn or prove first. Postings flagged as high risk are excluded.
 - **Cover letter:** written only from the profile you provide, so it doesn't invent experience, with a one-tap copy button.
 - Every analysis is saved in a Postgres database and shown as a card with a color-coded score.
 - Your profile is remembered in your own browser so you don't have to paste it every time.
