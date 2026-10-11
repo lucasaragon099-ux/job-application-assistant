@@ -157,7 +157,7 @@ async function comparar(formData) {
       required: q.obligatorio,
       status: q.estado,
     })),
-        warning_signs: (Array.isArray(x.alertas) ? x.alertas : []).map((a) => a.gravedad + ": " + a.titulo),
+    warning_signs: (Array.isArray(x.alertas) ? x.alertas : []).map((a) => a.gravedad + ": " + a.titulo),
   }));
 
   const prompt = `You compare job postings for one candidate. Use ONLY the data below and never invent facts. Reply ONLY with valid JSON, in English, with this exact shape:
@@ -200,6 +200,86 @@ ${JSON.stringify(datos)}`;
   const filas = await sql`insert into comparaciones (ids, resultado)
     values (${ids.join(",")}, ${JSON.stringify(r)}::jsonb) returning id`;
   redirect("/?c=" + filas[0].id + "#comparison");
+}
+
+async function panel() {
+  "use server";
+  const admin = await esAdmin();
+  if (!admin) {
+    const [{ n }] = await sql`select count(*)::int as n from comparaciones
+      where created_at > now() - interval '24 hours'`;
+    if (n >= LIMITE_COMPARACIONES) redirect("/?error=limitecomp");
+  }
+
+  const todas = await sql`select puesto, detalle, alertas from applications`;
+  const validas = todas.filter(
+    (x) => Array.isArray(x.detalle) && x.detalle.length > 0 && !nivelRiesgo(x.alertas)
+  );
+  if (validas.length < 2) redirect("/?error=panel");
+
+  const total = validas.length;
+  const datos = validas.map((x, i) => ({
+    posting: i + 1,
+    job_title: x.puesto,
+    requirements: x.detalle.map((q) => ({
+      requirement: q.requisito,
+      required: q.obligatorio,
+      status: q.estado,
+    })),
+  }));
+
+  const prompt = `You analyze the skill demand across several job postings for one candidate. Use ONLY the data below and never invent facts. Reply ONLY with valid JSON, in English, with this exact shape:
+{"resumen":"2 sentences: what the postings ask for most and where the candidate stands","habilidades":[{"habilidad":"short skill name","cantidad":0,"estado":"met"}],"prioridad":[{"habilidad":"string","motivo":"one short sentence"}]}
+
+Rules:
+- Group similar requirements from different postings under one short skill name (for example "Excel", "English", "Customer service").
+- "cantidad" is the number of postings that ask for that skill. It can never be greater than ${total}.
+- "estado" is the candidate's status for that skill across the postings: "met" if it was met in most of them, "partial" if mixed or partial, "missing" if it was mostly missing.
+- Return at most 10 skills, sorted by "cantidad" from highest to lowest.
+- "prioridad": the 3 skills the candidate should learn or prove first, chosen among skills that are "missing" or "partial" and asked by the most postings. If there are none, return an empty list.
+- Keep every string short.
+
+POSTINGS (${total}):
+${JSON.stringify(datos)}`;
+
+  let r = null;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5-5",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const text = (data.content || []).map((c) => c.text || "").join("");
+      r = JSON.parse(text.replace(/```json|```/g, "").trim());
+    }
+  } catch (e) {
+    r = null;
+  }
+  if (!r) redirect("/?error=ia");
+
+  const habilidades = (Array.isArray(r.habilidades) ? r.habilidades : [])
+    .slice(0, 10)
+    .map((h) => ({
+      habilidad: String(h.habilidad || ""),
+      cantidad: Math.min(Math.max(Number(h.cantidad) || 0, 0), total),
+      estado: ["met", "partial", "missing"].includes(h.estado) ? h.estado : "partial",
+    }));
+  const prioridad = (Array.isArray(r.prioridad) ? r.prioridad : []).slice(0, 3);
+
+  const resultado = { total, resumen: r.resumen || "", habilidades, prioridad };
+  await sql`insert into comparaciones (ids, resultado)
+    values ('panel', ${JSON.stringify(resultado)}::jsonb)`;
+  redirect("/#skills");
 }
 
 async function borrar(formData) {
@@ -264,6 +344,14 @@ const css = `
   .sub { font-size: 0.9rem; font-weight: 700; margin: 14px 0 6px; color: var(--title); }
   .rank { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 0.93rem; }
   .lista { margin: 0; padding-left: 20px; font-size: 0.9rem; display: grid; gap: 4px; }
+  .skill { margin-top: 10px; }
+  .skill-top { display: flex; justify-content: space-between; gap: 10px; font-size: 0.9rem; font-weight: 600; }
+  .skill-top span:last-child { color: var(--muted); font-weight: 500; font-size: 0.82rem; flex-shrink: 0; }
+  .bar { height: 8px; background: var(--soft); border-radius: 999px; margin-top: 4px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 999px; }
+  .fill.met { background: #22c55e; }
+  .fill.partial { background: #f59e0b; }
+  .fill.missing { background: #ef4444; }
   .card form .borrar { width: auto; background: transparent; color: #ef4444; border: 1px solid #fca5a5; padding: 7px 14px; font-size: 0.85rem; border-radius: 10px; }
   .salir { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 8px 14px; font-size: 0.85rem; width: auto !important; }
   .admin { margin-top: 32px; text-align: center; }
@@ -277,7 +365,6 @@ const css = `
     .bajo { background: #7f1d1d; color: #fecaca; }
     .aviso { background: #422006; color: #fde68a; }
     .peligro { color: #fca5a5; }
-
   }
 `;
 
@@ -308,6 +395,17 @@ export default async function Home({ searchParams }) {
       comp = null;
     }
   }
+
+  let skills = null;
+  try {
+    const pr = await sql`select resultado from comparaciones where ids = 'panel' order by created_at desc limit 1`;
+    skills = pr[0]?.resultado || null;
+  } catch (e) {
+    skills = null;
+  }
+  const disponibles = rows.filter(
+    (x) => Array.isArray(x.detalle) && x.detalle.length > 0 && !nivelRiesgo(x.alertas)
+  ).length;
 
   return (
     <main>
@@ -343,6 +441,11 @@ export default async function Home({ searchParams }) {
       )}
       {error === "limitecomp" && (
         <div className="aviso">The comparison limit has been reached for today. Please try again tomorrow.</div>
+      )}
+      {error === "panel" && (
+        <div className="aviso">
+          The dashboard needs at least 2 postings with a requirements breakdown (High risk postings are not counted).
+        </div>
       )}
 
       {comp && (
@@ -413,6 +516,69 @@ export default async function Home({ searchParams }) {
         </div>
       )}
 
+      {rows.length >= 2 && (
+        <div className="card" id="skills">
+          <div className="puesto">Skills dashboard</div>
+          {skills ? (
+            <>
+              {skills.resumen && <p className="resumen">{skills.resumen}</p>}
+
+              {Array.isArray(skills.habilidades) &&
+                skills.habilidades.map((h, i) => (
+                  <div key={i} className="skill">
+                    <div className="skill-top">
+                      <span>{h.habilidad}</span>
+                      <span>
+                        asked in {h.cantidad} of {skills.total}
+                      </span>
+                    </div>
+                    <div className="bar">
+                      <div
+                        className={"fill " + h.estado}
+                        style={{ width: Math.round((h.cantidad / (skills.total || 1)) * 100) + "%" }}
+                      />
+                    </div>
+                  </div>
+                ))}
+
+              {Array.isArray(skills.prioridad) && skills.prioridad.length > 0 && (
+                <>
+                  <h3 className="sub">Learn or prove first</h3>
+                  <ol className="rank">
+                    {skills.prioridad.map((p, i) => (
+                      <li key={i}>
+                        <b>{p.habilidad}</b>
+                        <div className="req-evidencia">{p.motivo}</div>
+                      </li>
+                    ))}
+                  </ol>
+                </>
+              )}
+
+              <p className="nota">
+                Bar color is your status: green met, amber partial, red missing. Based on {skills.total} postings with a
+                requirements breakdown; High risk postings are excluded.
+              </p>
+              {skills.total !== disponibles && (
+                <p className="nota">
+                  Out of date: {disponibles} postings are available now. Regenerate to update.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="resumen">
+              See which skills your saved postings ask for most and which ones you should learn first.
+            </p>
+          )}
+          <form action={panel} className="acciones">
+            <Boton
+              texto={skills ? "Regenerate dashboard" : "Generate skills dashboard"}
+              cargando="Analyzing..."
+            />
+          </form>
+        </div>
+      )}
+
       <h2 className="lista-titulo">Applications</h2>
       {rows.length === 0 && <p className="vacio">No postings analyzed yet.</p>}
 
@@ -430,7 +596,7 @@ export default async function Home({ searchParams }) {
               <div className="puesto">{x.puesto}</div>
               {x.empresa && <div className="empresa">{x.empresa}</div>}
             </div>
-                        <div className="badges">
+            <div className="badges">
               {x.puntaje != null && (
                 <span className={claseBadge(x.puntaje)}>{x.puntaje}%</span>
               )}
@@ -440,7 +606,7 @@ export default async function Home({ searchParams }) {
             </div>
           </div>
           {x.resumen && <p className="resumen">{x.resumen}</p>}
-                     {nivelRiesgo(x.alertas) === "high" && (
+          {nivelRiesgo(x.alertas) === "high" && (
             <p className="peligro">
               This posting shows serious warning signs. Review the alerts before sharing any data or paying anything.
             </p>
@@ -470,7 +636,7 @@ export default async function Home({ searchParams }) {
           )}
 
           {Array.isArray(x.alertas) && x.alertas.length > 0 && (
-                        <details open={nivelRiesgo(x.alertas) === "high"}>
+            <details open={nivelRiesgo(x.alertas) === "high"}>
               <summary>Posting alerts ({x.alertas.length})</summary>
               <ul className="reqs">
                 {x.alertas.map((a, i) => (
