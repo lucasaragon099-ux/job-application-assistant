@@ -276,6 +276,8 @@ const css = `
     .medio { background: #713f12; color: #fde68a; }
     .bajo { background: #7f1d1d; color: #fecaca; }
     .aviso { background: #422006; color: #fde68a; }
+    .peligro { color: #fca5a5; }
+
   }
 `;
 
