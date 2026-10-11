@@ -157,7 +157,7 @@ async function comparar(formData) {
       required: q.obligatorio,
       status: q.estado,
     })),
-    warning_signs: (Array.isArray(x.alertas) ? x.alertas : []).map((a) => a.titulo),
+        warning_signs: (Array.isArray(x.alertas) ? x.alertas : []).map((a) => a.gravedad + ": " + a.titulo),
   }));
 
   const prompt = `You compare job postings for one candidate. Use ONLY the data below and never invent facts. Reply ONLY with valid JSON, in English, with this exact shape:
@@ -227,6 +227,9 @@ const css = `
   .alto { background: #dcfce7; color: #166534; }
   .medio { background: #fef3c7; color: #92400e; }
   .bajo { background: #fee2e2; color: #991b1b; }
+  .badges { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+  .riesgo { background: #dc2626; color: #fff; font-weight: 700; font-size: 0.78rem; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+  .peligro { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: rgba(220,38,38,0.12); color: #dc2626; font-size: 0.88rem; font-weight: 600; }
   .resumen { margin: 12px 0; font-size: 0.95rem; }
   .carta { white-space: pre-wrap; font-family: inherit; background: var(--soft); border-radius: 12px; padding: 14px; margin: 8px 0 0; font-size: 0.93rem; }
   .acciones { margin-top: 12px; }
@@ -275,6 +278,11 @@ const css = `
     .aviso { background: #422006; color: #fde68a; }
   }
 `;
+
+function nivelRiesgo(alertas) {
+  if (!Array.isArray(alertas)) return null;
+  return alertas.some((a) => a.gravedad === "high") ? "high" : null;
+}
 
 function claseBadge(p) {
   if (p >= 70) return "badge alto";
@@ -420,11 +428,21 @@ export default async function Home({ searchParams }) {
               <div className="puesto">{x.puesto}</div>
               {x.empresa && <div className="empresa">{x.empresa}</div>}
             </div>
-            {x.puntaje != null && (
-              <span className={claseBadge(x.puntaje)}>{x.puntaje}%</span>
-            )}
+                        <div className="badges">
+              {x.puntaje != null && (
+                <span className={claseBadge(x.puntaje)}>{x.puntaje}%</span>
+              )}
+              {nivelRiesgo(x.alertas) === "high" && (
+                <span className="riesgo">⚠ High risk</span>
+              )}
+            </div>
           </div>
           {x.resumen && <p className="resumen">{x.resumen}</p>}
+                     {nivelRiesgo(x.alertas) === "high" && (
+            <p className="peligro">
+              This posting shows serious warning signs. Review the alerts before sharing any data or paying anything.
+            </p>
+          )}
 
           {Array.isArray(x.detalle) && x.detalle.length > 0 && (
             <details>
@@ -450,7 +468,7 @@ export default async function Home({ searchParams }) {
           )}
 
           {Array.isArray(x.alertas) && x.alertas.length > 0 && (
-            <details>
+                        <details open={nivelRiesgo(x.alertas) === "high"}>
               <summary>Posting alerts ({x.alertas.length})</summary>
               <ul className="reqs">
                 {x.alertas.map((a, i) => (
