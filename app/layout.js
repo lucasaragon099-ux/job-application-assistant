@@ -1,4 +1,26 @@
-export const metadata = { title: "Job Application Assistant" };
+export const metadata = {
+  metadataBase: new URL("https://job-application-assistant-beryl.vercel.app"),
+  title: "Job Application Assistant",
+  description:
+    "AI-powered app that analyzes a job posting, scores the fit and writes a tailored cover letter. Built from an iPhone with Next.js, Postgres and Claude.",
+  icons: { icon: "/IMG_0453.jpeg", apple: "/IMG_0453.jpeg" },
+  openGraph: {
+    title: "Job Application Assistant",
+    description:
+      "Analyze a job posting, get your fit score and a tailored cover letter with AI.",
+    url: "/",
+    siteName: "Job Application Assistant",
+    images: [{ url: "/IMG_0453.jpeg", width: 512, height: 512 }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Job Application Assistant",
+    description:
+      "Analyze a job posting, get your fit score and a tailored cover letter with AI.",
+    images: ["/IMG_0453.jpeg"],
+  },
+};
 
 const css = `
   * { box-sizing: border-box; }
